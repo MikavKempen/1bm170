@@ -165,6 +165,9 @@ print("- Column 'Broken' was removed to avoid duplication")
 print("\n" + "="*80 + "\n")
 
 
+print(heatpumps.describe())
+
+
 
 
 
