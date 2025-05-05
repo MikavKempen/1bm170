@@ -202,12 +202,4 @@ df = df.drop(columns=['timestamp', 'operation_type'])
 
 df.to_csv('test_measurements_cleaned.csv', index=False)
 
-# 19. Group by 'operation_id' and count 'test_passed' values
-print("19. Group by 'operation_id' and count 'test_passed' values")
-operation_group = df.groupby('operation_id')['test_passed'].count()
-print("Test count per operation_id:\n", operation_group, "\n")
 
-# 20. Group by 'dut_sn' and count 'test_passed' values
-print("20. Group by 'dut_sn' and count 'test_passed' values")
-dut_group = df.groupby('dut_sn')['test_passed'].count()
-print("Test count per dut_sn:\n", dut_group, "\n")
