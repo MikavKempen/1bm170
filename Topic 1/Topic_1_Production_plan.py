@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Load the file
-df = pd.read_csv("Dataset6-process_plans.csv")
+df = pd.read_csv("Dataset6-process_plans.csv", delimiter=";")
 
 print("=== Initial Structure ===")
 print(df.info())

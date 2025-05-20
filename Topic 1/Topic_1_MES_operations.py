@@ -1,7 +1,6 @@
 import pandas as pd
-from scipy.stats import describe
 
-# === 1. Load dataset ===
+# Load dataset
 df = pd.read_csv("Dataset2-mes_operations.csv")
 
 print("=== Initial checks ===")
@@ -9,83 +8,128 @@ print("Missing values per column:\n")
 print(df.isnull().sum())
 print("\nShape before any cleaning:", df.shape)
 
-# === 2. Parse datetime columns ===
+# Ensure datetime columns are parsed
 df['BeginDateTime'] = pd.to_datetime(df['BeginDateTime'], errors='coerce')
 df['EndDateTime'] = pd.to_datetime(df['EndDateTime'], errors='coerce')
 
-# === 3. Drop rows with missing key info ===
+# Drop rows with missing critical data (Begin/End time or SerialNumber)
 df = df.dropna(subset=['BeginDateTime', 'EndDateTime', 'SerialNumber'])
 
-# === 4. Compute durations ===
+# Calculate duration
 df['DurationSeconds'] = (df['EndDateTime'] - df['BeginDateTime']).dt.total_seconds()
 
-# === 5. Flag zero and negative durations ===
+# Flag suspicious durations
 zero_durations = df[df['DurationSeconds'] == 0]
 negative_durations = df[df['DurationSeconds'] < 0]
+
 print(f"\nZero-duration rows: {len(zero_durations)}")
 print(f"Negative-duration rows: {len(negative_durations)}")
 
-# === 6. Drop exact full-row duplicates ===
+# Keep them for now — just log
+# You could export these for QA if needed:
+# zero_durations.to_csv("zero_durations.csv", index=False)
+# negative_durations.to_csv("negative_durations.csv", index=False)
+
+# Check for duplicates based on full row
 full_duplicates = df.duplicated()
 print(f"\nExact duplicate rows: {full_duplicates.sum()}")
 df = df[~full_duplicates]
 
-# === 7. Drop duplicates with same SerialNumber, BeginDateTime, EndDateTime ===
-dup_cols = ['SerialNumber', 'BeginDateTime', 'EndDateTime']
-duplicates_based_on_time = df.duplicated(subset=dup_cols, keep='first')
-print(f"Duplicate rows based on SerialNumber + time: {duplicates_based_on_time.sum()}")
+# Check for duplicate operations (same SerialNumber + OperationText)
+duplicate_ops = df.duplicated(subset=['SerialNumber', 'MfgOrderOperationText', 'BeginDateTime', 'EndDateTime'], keep=False)
+print(f"Duplicate operation entries (same SN + op + times): {duplicate_ops.sum()}")
 
-df_dedup = df[~duplicates_based_on_time].copy()
-df_dedup.reset_index(drop=True, inplace=True)
+# Just mark them — don’t drop!
+df['IsDuplicatedOperation'] = duplicate_ops
 
-# === 8. Save cleaned versions ===
+# Output cleaned version
 df.to_csv("mes_operations_cleaned.csv", index=False)
-df_dedup.to_csv("mes_operations_cleaned_deduplicated.csv", index=False)
-print("\nSaved:\n- 'mes_operations_cleaned.csv'\n- 'mes_operations_cleaned_deduplicated.csv'")
-print("Shape after deduplication:", df_dedup.shape)
+print("\nCleaned dataset saved to 'mes_operations_cleaned.csv'")
+print("Shape after cleaning:", df.shape)
 
-# === 9. Load heat pump models ===
-heatpumps_df = pd.read_csv("heatpumps_cleaned_v2.csv")
-df_dedup = df_dedup.merge(heatpumps_df[['SerialNumber', 'Model']], on='SerialNumber', how='left')
+import pandas as pd
 
-if df_dedup['Model'].isnull().sum() > 0:
-    print("⚠️ Warning: Some SerialNumbers could not be matched to a Model.")
+# Load the cleaned dataset
+df = pd.read_csv("mes_operations_cleaned.csv", parse_dates=['BeginDateTime', 'EndDateTime'])
 
-# === 10. Generate stats per (Model, Operation) ===
-model_op_stats = df_dedup.groupby(['Model', 'MfgOrderOperationText'])['DurationSeconds'].agg(
-    count='count',
-    mean='mean',
-    std='std',
-    min='min',
-    q1=lambda x: x.quantile(0.25),
-    median='median',
-    q3=lambda x: x.quantile(0.75),
-    max='max'
-).reset_index()
-model_op_stats.to_csv("duration_stats_model_operation.csv", index=False)
+print("\n" + "="*80)
+print("MES OPERATIONS OVERVIEW")
+print("="*80 + "\n")
 
-# === 11. Generate stats per (ManufacturingOrder, Operation) ===
-order_op_stats = df_dedup.groupby(['ManufacturingOrder', 'MfgOrderOperationText'])['DurationSeconds'].agg(
-    count='count',
-    mean='mean',
-    std='std',
-    min='min',
-    q1=lambda x: x.quantile(0.25),
-    median='median',
-    q3=lambda x: x.quantile(0.75),
-    max='max'
-).reset_index()
-order_op_stats.to_csv("duration_stats_order_operation.csv", index=False)
+# === 1. Check for same Begin == End timestamps (zero duration)
+same_start_end = df[df['BeginDateTime'] == df['EndDateTime']]
+print(f"Rows with same Begin and End time (zero-duration): {len(same_start_end)}")
+print("Example of affected SerialNumbers:")
+print(same_start_end[['SerialNumber', 'MfgOrderOperationText']].head())
 
-# === 12. Print summaries ===
-print("\n=== Sample (Model, Operation) Duration Stats ===")
-print(model_op_stats[['Model', 'MfgOrderOperationText', 'count', 'mean', 'median', 'std']].sample(5))
+# === 2. ID column: Should be unique
+print(f"\nUnique ID values: {df['ID'].nunique()} out of {len(df)} rows")
+if df['ID'].nunique() != len(df):
+    print("⚠️ Warning: IDs are not unique!")
 
-print("\n=== Top 5 (Model, Operation) by Median Duration ===")
-print(model_op_stats[['Model', 'MfgOrderOperationText', 'median', 'mean', 'count']].sort_values(by='median', ascending=False).head())
+# === 3. ManufacturingOrder: how many operations per order
+ops_per_order = df.groupby('ManufacturingOrder')['MfgOrderOperationText'].count()
+print(f"\nAverage number of operations per ManufacturingOrder: {ops_per_order.mean():.2f}")
+print(f"Min operations: {ops_per_order.min()}, Max operations: {ops_per_order.max()}")
 
-print("\n=== Sample (ManufacturingOrder, Operation) Duration Stats ===")
-print(order_op_stats[['ManufacturingOrder', 'MfgOrderOperationText', 'count', 'mean', 'median', 'std']].sample(5))
+# === 4. Does same order use consistent operation names?
+print("\nChecking if operations are consistent within orders...")
+inconsistent_orders = (
+    df.groupby(['ManufacturingOrder', 'MfgOrderOperationText'])['Material']
+    .nunique().reset_index()
+    .groupby('ManufacturingOrder')['Material'].nunique()
+)
+weird_orders = inconsistent_orders[inconsistent_orders > 1]
+print(f"Orders with inconsistent materials for the same operation: {len(weird_orders)}")
+if len(weird_orders) > 0:
+    print(weird_orders.head())
 
-print("\n=== Top 5 (ManufacturingOrder, Operation) by Median Duration ===")
-print(order_op_stats[['ManufacturingOrder', 'MfgOrderOperationText', 'median', 'mean', 'count']].sort_values(by='median', ascending=False).head())
+# === 5. Material: Unique values and example link to model
+print("\nUnique materials:", df['Material'].nunique())
+print("Example materials:")
+print(df['Material'].value_counts().head())
+
+# === 6. ProcessPlan: how many plans, how many steps per plan
+print("\nUnique ProcessPlans:", df['ProcessPlan'].nunique())
+steps_per_plan = df.groupby('ProcessPlan')['MfgOrderOperationText'].nunique()
+print("Steps per ProcessPlan (sample):")
+print(steps_per_plan.head())
+
+# === 7. SerialNumber: flow times through process
+flow_times = df.groupby('SerialNumber').agg(
+    start=('BeginDateTime', 'min'),
+    end=('EndDateTime', 'max')
+)
+flow_times['FlowTimeMinutes'] = (flow_times['end'] - flow_times['start']).dt.total_seconds() / 60
+print("\nSample flow times (in minutes):")
+print(flow_times['FlowTimeMinutes'].describe())
+
+# === 8. WorkCenter: importance & usage
+print("\nTop 10 most used Workcenters:")
+print(df['WorkCenter'].value_counts().head(10))
+
+# === 9. TotalQuantity checks per order
+quantity_summary = df.groupby('ManufacturingOrder').agg(
+    total_qty=('TotalQuantity', 'first'),
+    serials_count=('SerialNumber', 'nunique')
+)
+quantity_summary['delta'] = quantity_summary['total_qty'] - quantity_summary['serials_count']
+print("\nOrders where TotalQuantity ≠ number of SerialNumbers (top 5 mismatches):")
+print(quantity_summary[quantity_summary['delta'] != 0].sort_values(by='delta', ascending=False).head())
+
+# === 10. Planned quantity vs confirmed yield + scrap
+df['ConfirmedTotal'] = df['OpTotalConfirmedYieldQty'] + df['OpTotalConfirmedScrapQty']
+qty_mismatch = df[df['ConfirmedTotal'] != df['TotalQuantity']]
+print(f"\nRows where yield + scrap ≠ TotalQuantity: {len(qty_mismatch)}")
+
+# === 11. ManufacturingOrderOperation vs OperationText (optional)
+# Just show 5 examples where the same ID has multiple Texts
+op_text_conflict = df.groupby(['ManufacturingOrderOperation'])['MfgOrderOperationText'].nunique()
+conflicting_ops = op_text_conflict[op_text_conflict > 1]
+print(f"\nManufacturingOrderOperation with multiple operation texts: {len(conflicting_ops)}")
+if len(conflicting_ops) > 0:
+    print(conflicting_ops.head())
+
+print("\n" + "="*80)
+print("Done analyzing mes_operations.csv")
+print("="*80)
