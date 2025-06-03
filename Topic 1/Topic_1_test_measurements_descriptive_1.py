@@ -16,9 +16,6 @@ operation_test_summary = pd.DataFrame({
 # Calculate percentage of passed tests
 operation_test_summary['passed_percentage'] = (operation_test_summary['passed_tests'] / operation_test_summary['total_tests']) * 100
 
-# Print result
-print(operation_test_summary[['total_tests', 'passed_tests', 'passed_percentage']])
-
 # Total number of operation_ids
 total_operations = len(operation_test_summary)
 total_tests_all = operation_test_summary['total_tests'].sum()
@@ -153,7 +150,6 @@ tests_high_pass_dut = high_pass_dut['total_tests'].sum()
 print(f"Filtered - dut_sn with 0-10% passed: {num_low_pass_dut} (total tests: {tests_low_pass_dut}, mean number of tests: {low_pass_dut['total_tests'].mean()})")
 print(f"Filtered - dut_sn with 90-100% passed: {num_high_pass_dut} (total tests: {tests_high_pass_dut}, mean number of tests: {high_pass_dut['total_tests'].mean()})\n")
 
-
 # Group by 'instrument_id' to get total and passed test counts
 total_tests_instr = df.groupby('instrument_id').size()
 passed_tests_instr = df.groupby('instrument_id')['test_passed'].sum()
@@ -249,3 +245,137 @@ print(f"instrument_id with 100% passed: {num_hundred_instr_f} (total tests: {tes
 print(f"Average passing rate: {average_pass_rate_instr_f:.2f}%")
 print(f"instrument_id with 0-10% passed: {num_low_pass_instr_f} (total tests: {tests_low_pass_instr_f}, mean number of tests: {low_pass_instr_f['total_tests'].mean()})")
 print(f"instrument_id with 90-100% passed: {num_high_pass_instr_f} (total tests: {tests_high_pass_instr_f}, mean number of tests: {high_pass_instr_f['total_tests'].mean()})\n")
+
+# Group by dut_sn and operation_id, count how many times each combination appears
+counts = df.groupby(['dut_sn', 'operation_id']).size().reset_index(name='count')
+
+# Filter for combinations with more than one occurrence
+repeated = counts[counts['count'] > 1]
+
+# Merge to get the full rows for repeated operation_ids
+merged = pd.merge(df, repeated[['dut_sn', 'operation_id']], on=['dut_sn', 'operation_id'])
+
+# Group by dut_sn to count repeated tests and passed tests
+summary = merged.groupby('dut_sn').agg(
+    repeated_tests=('test_passed', 'count'),
+    passed_tests=('test_passed', 'sum')
+).reset_index()
+
+# Calculate percentage passed
+summary['passed_percentage'] = (summary['passed_tests'] / summary['repeated_tests']) * 100
+
+# Get passing rates for each dut_sn (based on all tests, not just repeated ones)
+overall_pass_rate = df.groupby('dut_sn')['test_passed'].mean().reset_index(name='pass_rate')
+
+# Filter to only include dut_sns that had repeated operation_ids
+repeated_dut_sns = summary['dut_sn'].unique()
+filtered_pass_rate = overall_pass_rate[overall_pass_rate['dut_sn'].isin(repeated_dut_sns)]
+
+# Calculate mean passing rate of these dut_sns
+mean_pass_rate = filtered_pass_rate['pass_rate'].mean()
+
+# Print the mean pass rate
+print(f"Mean pass rate for dut_sns with repeated operation_ids: {mean_pass_rate:.2%}\n")
+
+# Count how many times each (dut_sn, operation_id) pair appears
+op_counts = df.groupby(['dut_sn', 'operation_id']).size().reset_index(name='count')
+
+# Filter to only repeated operation_ids per dut_sn
+repeated_ops = op_counts[op_counts['count'] > 1]
+
+# Count how often each operation_id gets repeated across different dut_sns
+repeated_op_counts = repeated_ops['operation_id'].value_counts()
+
+# Total number of tests per operation_id
+total_tests_per_op = df['operation_id'].value_counts()
+
+# Merge with repeated operation_id counts
+repeated_op_df = repeated_op_counts.reset_index()
+repeated_op_df.columns = ['operation_id', 'repeated_dut_count']
+repeated_op_df['total_tests'] = repeated_op_df['operation_id'].map(total_tests_per_op)
+repeated_op_df['percentage_repeated'] = (repeated_op_df['repeated_dut_count'] / repeated_op_df['total_tests']) * 100
+
+# Sort and show top 5
+top5_repeated_ops = repeated_op_df.sort_values(by='percentage_repeated', ascending=False).head(5)
+print(top5_repeated_ops)
+
+
+# Count how many times each operation_id is performed per dut_sn
+counts_per_dut_op = df.groupby(['dut_sn', 'operation_id']).size().reset_index(name='count')
+
+# Filter only those with more than 1 occurrence (repeated)
+repeated_tests = counts_per_dut_op[counts_per_dut_op['count'] > 1]
+
+# Total number of repeated tests (each repeated pair counts as 1)
+total_repeated_tests = repeated_tests.shape[0]
+print("Total number of repeated tests:", total_repeated_tests)
+# Total number of all tests
+total_tests = df.shape[0]
+
+# Percentage of repeated tests
+percentage_repeated = (total_repeated_tests / total_tests) * 100
+
+print(f"Total number of tests: {total_tests}")
+print(f"Percentage of repeated tests: {percentage_repeated:.2f}%")
+
+# Calculate tolerance
+df['tolerance'] = df['upper_specification_limit'] - df['lower_specification_limit']
+df['lower_margin'] = df['lower_specification_limit'] + 0.05 * df['tolerance']
+df['upper_margin'] = df['upper_specification_limit'] - 0.05 * df['tolerance']
+
+# Check if values are within 5% of limits
+df['within_5_percent'] = (
+    ((df['value'] >= df['lower_specification_limit']) & (df['value'] <= df['lower_margin'])) |
+    ((df['value'] <= df['upper_specification_limit']) & (df['value'] >= df['upper_margin']))
+) & (df['test_passed'] == 1)
+
+# Calculate percentage for each operation_id (over ALL operation_ids, not just top 5)
+within_range_percent_all = df.groupby('operation_id')['within_5_percent'].sum() / df.groupby('operation_id')['test_passed'].sum() * 100
+
+# Drop NaNs
+within_range_percent_all = within_range_percent_all.dropna()
+
+# Show top 5 for display
+print(within_range_percent_all.sort_values(ascending=False).head(5).reset_index(name='percent_within_5_percent'))
+
+# Mean over all operation_ids
+mean_within_range_percent_all = within_range_percent_all.mean()
+print(f"Mean percentage within 5% limits over all operation_ids: {mean_within_range_percent_all:.2f}%")
+
+
+# Total passed tests across all operation_ids
+total_passed_tests = df[df['test_passed'] == 1].shape[0]
+
+# Total number of passed tests within 5% margin across all operation_ids
+within_margin_total = df[
+    (df['test_passed'] == 1) &
+    (
+        ((df['value'] - df['lower_specification_limit']) <= 0.05 * (df['upper_specification_limit'] - df['lower_specification_limit'])) |
+        ((df['upper_specification_limit'] - df['value']) <= 0.05 * (df['upper_specification_limit'] - df['lower_specification_limit']))
+    )
+].shape[0]
+
+# Compute overall percentage
+overall_percent_within_margin = (within_margin_total / total_passed_tests) * 100
+print(f"Percentage of all passed tests within 5% of limits: {overall_percent_within_margin:.2f}%")
+
+# Calculate percentage of tests within 5% tolerance per dut_sn
+within_range_percent_dut = df.groupby('dut_sn')['within_5_percent'].sum() / df.groupby('dut_sn')['test_passed'].sum() * 100
+within_range_percent_dut = within_range_percent_dut.dropna()
+
+# Top 5 dut_sn with highest percentage
+top_5_dut = within_range_percent_dut.sort_values(ascending=False).head(5).reset_index(name='percent_within_5_percent')
+print(top_5_dut)
+
+# Mean percentage over all dut_sn
+mean_within_range_percent_dut = within_range_percent_dut.mean()
+print(f"Mean percentage within 5% limits over all dut_sn: {mean_within_range_percent_dut:.2f}%")
+
+# Overall percentage of all passed tests within 5% margin
+total_passed_tests = df[df['test_passed'] == 1].shape[0]
+within_margin_total_dut = df[(df['test_passed'] == 1) & df['within_5_percent']].shape[0]
+overall_percent_within_margin_dut = (within_margin_total_dut / total_passed_tests) * 100
+print(f"Percentage of all passed tests within 5% of limits: {overall_percent_within_margin_dut:.2f}%")
+
+average_passing_rate_all = df['test_passed'].mean() * 100
+print(f"Average passing rate over all tests: {average_passing_rate_all:.2f}%")

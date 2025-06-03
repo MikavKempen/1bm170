@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Load the CSV files
-heatpumps = pd.read_csv('Dataset1-heatpumps.csv')
+heatpumps = pd.read_csv('Dataset1-heatpumps.csv', delimiter=';')
 mes_operations = pd.read_csv('Dataset2-mes_operations.csv')
 test_measurements = pd.read_csv('Dataset3-test_measurements.csv', low_memory=False)
 genealogy = pd.read_csv('Dataset4-genealogy.csv')

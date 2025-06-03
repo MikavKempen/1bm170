@@ -1,107 +1,25 @@
 import pandas as pd
+import matplotlib.pyplot as plt
 
 # Load the test measurements CSV from the local project folder
 df = pd.read_csv('Dataset3-test_measurements.csv', low_memory=False)
 
-print("=== TEST MEASUREMENTS DATASET ANALYSIS ===\n")
-
-# 1. Shape
-print(f"1. Dataset shape: {df.shape[0]} rows, {df.shape[1]} columns\n")
+# 1. Drop 'uncertainty' and 'method' columns
+print("1. Drop 'uncertainty' and 'method' columns \n")
+df = df.drop(columns=['uncertainty', 'method'])
 
 # 2. Missing values
 print("2. Missing values per column:")
 print(df.isnull().sum(), "\n")
 
-# 3. Duplicate rows
-dupes = df.duplicated().sum()
-print(f"3. Full duplicate rows: {dupes}\n")
-
-# 4. Unique value counts
-print("4. Unique counts per column:")
-for col in df.columns:
-    print(f"   - {col}: {df[col].nunique()} unique values")
-print()
-
-# 5. 'value' column summary
-print("5. 'value' column statistics:")
-print(df['value'].describe(), "\n")
-
-# 6. Specification limits summary
-print("6. Specification limits statistics:")
-print(df[['lower_specification_limit', 'upper_specification_limit']].describe(), "\n")
-
-# 7. Out-of-spec values
-valid_limits = df.dropna(subset=['value', 'lower_specification_limit', 'upper_specification_limit'])
-out_of_spec = valid_limits[
-    (valid_limits['value'] < valid_limits['lower_specification_limit']) |
-    (valid_limits['value'] > valid_limits['upper_specification_limit'])
-]
-print(f"7. Out-of-spec measurements: {len(out_of_spec)} rows out of {len(valid_limits)} with limits")
-print("   Example out-of-spec rows:")
-print(out_of_spec[['timestamp','operation_id','value','lower_specification_limit','upper_specification_limit']].head(), "\n")
-
-# 8. Check 'uncertainty' field
-print("8. 'uncertainty' field:")
-print(f"   Non-null count: {df['uncertainty'].notnull().sum()} ({df['uncertainty'].notnull().mean()*100:.2f}%)")
-print(f"   Unique values: {df['uncertainty'].dropna().unique()}\n")
-
-# 9. Units distribution
-print("9. Top 10 units:")
-print(df['unit'].value_counts().head(10), "\n")
-
-# 10. Operation type distribution
-print("10. Operation types:")
-print(df['operation_type'].value_counts(), "\n")
-
-# 11. Method distribution
-print("11. Method usage (top 10):")
-print(df['method'].value_counts(dropna=False).head(10), "\n")
-
-# 12. Instrument ID overview
-print("12. Instrument IDs:")
-print(f"   Unique instruments: {df['instrument_id'].nunique()}")
-print("   Top 5 instruments:")
-print(df['instrument_id'].value_counts().head(5), "\n")
-
-# 13. Timestamp format examples
-print("13. Timestamp samples:")
-print(df['timestamp'].dropna().unique()[:5], "\n")
-
-print("=== END OF ANALYSIS ===")
-
-# 14. Drop 'uncertainty' and 'method' columns
-print("14. Drop 'uncertainty' and 'method' columns \n")
-df = df.drop(columns=['uncertainty', 'method'])
-
-# 15. Drop rows where 'value' is missing
-print("15. value column rows with missing values")
+# 2.1. Drop rows where 'value' is missing
+print("2.1. Drop rows where 'value' is missing")
 missing_value_rows = df[df['value'].isnull()]
 print(missing_value_rows[['value', 'lower_specification_limit', 'upper_specification_limit']], "\n")
 df = df.dropna(subset=['value'])
 
-# 16. Check negative values
-print("16. Check negative values")
-# Units to check
-units = ['Ampere', 'Bar', 'COP', 'Gram', 'Pa', 'RPM', 'seconds']
-
-# Count negative values per unit
-negative_value_counts = {
-    unit: df[(df['unit'] == unit) & (df['value'] < 0)].shape[0]
-    for unit in units
-}
-
-# Convert to DataFrame for display
-negative_counts_df = pd.DataFrame(list(negative_value_counts.items()), columns=['unit', 'negative_value_count'])
-print(negative_counts_df)
-
-# Units for which to convert negative 'value' entries to positive
-units_to_convert = ['Bar', 'COP', 'Gram', 'Pa']
-
-# Apply absolute value for those units
-df.loc[df['unit'].isin(units_to_convert), 'value'] = df.loc[df['unit'].isin(units_to_convert), 'value'].abs()
-
-# 16. Fill in/drop missing limits
-print("16. Fill in/drop missing limits")
+# 2.3. Fill in/drop missing limits
+print("2.3. Fill in/drop missing limits")
 # Get rows with missing lower or upper limits
 missing_limits = df[df['lower_specification_limit'].isnull() | df['upper_specification_limit'].isnull()]
 
@@ -157,18 +75,8 @@ missing_limits = df[df['lower_specification_limit'].isnull() | df['upper_specifi
 unique_ops_with_missing_limits = missing_limits['operation_id'].dropna().unique()
 print("Unique operation_id values with missing limits after setting to 0:", unique_ops_with_missing_limits, "\n")
 
-# 17. Create test_passed column
-print("17. Create test_passed column \n")
-# Swap lower and upper limits where lower > upper
-condition = df['lower_specification_limit'] > df['upper_specification_limit']
-df.loc[condition, ['lower_specification_limit', 'upper_specification_limit']] = df.loc[condition, ['upper_specification_limit', 'lower_specification_limit']].values
-
-# Create 'test_passed' column: 1 if value is within limits, 0 otherwise
-df['test_passed'] = ((df['value'] >= df['lower_specification_limit']) & (df['value'] <= df['upper_specification_limit'])).astype(int)
-print(df[['timestamp', 'value', 'test_passed']].head(), "\n")
-
-# 18. Delete rows where 'operation_id' is missing
-print("18. Delete rows where 'operation_id' is missing \n")
+# 2.4. Delete rows where 'operation_id' is missing
+print("2.4. Delete rows where 'operation_id' is missing \n")
 # Get rows where operation_id is missing
 missing_op_rows = df[df['operation_id'].isnull()]
 
@@ -196,9 +104,95 @@ for _, row in missing_limit_pairs.iterrows():
 
 df = df[df['operation_id'].notnull()]
 
-# 14. Drop 'timestamp' and 'operation_type' columns
-print("14. Drop 'timestamp' and 'operation_type' columns \n")
-df = df.drop(columns=['timestamp', 'operation_type'])
+# 3. Check negative values
+print("3. Check negative values for certain measurement units and set to positive")
+# Normalize 'unit' column values
+df['unit'] = df['unit'].replace({
+    'A': 'Ampere',
+    'degreesC': 'DegreesC'
+})
+
+# Filter relevant rows
+bar_high_limit_ops = df[(df['unit'] == 'Bar') & (df['upper_specification_limit'] > 100)]
+
+# Count occurrences per operation_id
+operation_id_counts = bar_high_limit_ops['operation_id'].value_counts()
+
+# Print the result
+print("Count of occurrences where 'Bar' unit and upper_specification_limit > 100 by operation_id:")
+print(operation_id_counts)
+
+# Count occurrences per operation_id where lower_specification_limit < 0 for unit 'seconds'
+negative_lower_counts = df[
+    (df['unit'] == 'seconds') & (df['lower_specification_limit'] < 0)
+].groupby('operation_id').size()
+
+print(f"number of negative lower counts seconds: {negative_lower_counts}")
+
+
+for unit in df['unit'].dropna().unique():
+    unit_df = df[df['unit'] == unit]
+
+    plt.figure(figsize=(12, 4))
+
+    plt.subplot(1, 3, 1)
+    unit_df['value'].plot.box()
+    plt.title(f'{unit} - Value')
+    plt.ylabel('Value')
+    plt.grid(True)
+
+    plt.subplot(1, 3, 2)
+    unit_df['lower_specification_limit'].plot.box()
+    plt.title(f'{unit} - Lower Limit')
+    plt.ylabel('Lower Spec Limit')
+    plt.grid(True)
+
+    plt.subplot(1, 3, 3)
+    unit_df['upper_specification_limit'].plot.box()
+    plt.title(f'{unit} - Upper Limit')
+    plt.ylabel('Upper Spec Limit')
+    plt.grid(True)
+
+    plt.suptitle(f'Boxplots for Unit: {unit}', fontsize=14)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
+
+# Units to check
+units = ['Ampere', 'Bar', 'COP', 'Gram', 'Pa', 'RPM', 'seconds']
+
+# Count negative values per unit
+negative_value_counts = {
+    unit: df[(df['unit'] == unit) & (df['value'] < 0)].shape[0]
+    for unit in units
+}
+
+# Convert to DataFrame for display
+negative_counts_df = pd.DataFrame(list(negative_value_counts.items()), columns=['unit', 'negative_value_count'])
+print(negative_counts_df, "\n")
+
+# Units for which to convert negative 'value' entries to positive
+units_to_convert = ['Bar', 'COP', 'Gram', 'Pa']
+
+# Apply absolute value for those units
+df.loc[df['unit'].isin(units_to_convert), 'value'] = df.loc[df['unit'].isin(units_to_convert), 'value'].abs()
+
+# Set lower_specification_limit to 0 if it's negative for specific units
+units_to_adjust_lower = ['Gram', 'COP']
+df.loc[(df['unit'].isin(units_to_adjust_lower)) & (df['lower_specification_limit'] < 0), 'lower_specification_limit'] = 0
+
+# 3. Create test_passed column
+print("3. Create test_passed column")
+# Swap lower and upper limits where lower > upper
+condition = df['lower_specification_limit'] > df['upper_specification_limit']
+df.loc[condition, ['lower_specification_limit', 'upper_specification_limit']] = df.loc[condition, ['upper_specification_limit', 'lower_specification_limit']].values
+
+# Create 'test_passed' column: 1 if value is within limits, 0 otherwise
+df['test_passed'] = ((df['value'] >= df['lower_specification_limit']) & (df['value'] <= df['upper_specification_limit'])).astype(int)
+print(df[['timestamp', 'value', 'test_passed']].head(), "\n")
+
+# 4. Drop 'timestamp'  columns
+print("4. Drop 'timestamp' columns \n")
+df = df.drop(columns=['timestamp'])
 
 df.to_csv('test_measurements_cleaned.csv', index=False)
 
