@@ -243,3 +243,5 @@ print(heatpumps.describe())
 # print(f"After cleaning:")
 # print(f"Devices with State = 5 but Broken = 0: {len(state5_broken0)}")
 # print(f"Devices with Broken = 1 but State != 5: {len(broken1_state_not5)}")
+
+
