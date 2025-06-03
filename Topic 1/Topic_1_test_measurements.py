@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Load the test measurements CSV from the local project folder
-df = pd.read_csv('Dataset3-test_measurements.csv', low_memory=False)
+df = pd.read_csv('test_measurements.csv', low_memory=False)
 
 # 1. Drop 'uncertainty' and 'method' columns
 print("1. Drop 'uncertainty' and 'method' columns \n")
