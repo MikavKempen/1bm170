@@ -11,7 +11,7 @@ ordered_columns = list(category_color_map.keys())
 
 # Load the datasets
 heatpumps = pd.read_csv('heatpumps_cleaned.csv')
-operations = pd.read_csv('mes_operations_cleaned.csv')
+operations = pd.read_csv('Dataset2-mes_operations.csv')
 process_plans = pd.read_csv('process_plans_cleaned.csv')
 
 # -------------------- Broken Heat Pumps Section --------------------
@@ -105,7 +105,7 @@ mes_serials_set = set(operations['SerialNumber'])
 broken_with_operations = broken_serials_set.intersection(mes_serials_set)
 
 # Report
-print("\n📊 MES Coverage of Broken Heat Pumps:")
+print("\nMES Coverage of Broken Heat Pumps:")
 print(f"Total broken heat pumps in dataset: {len(broken_serials_set)}")
 print(f"Broken heat pumps with MES operations: {len(broken_with_operations)}")
 print(f"Coverage: {(len(broken_with_operations) / len(broken_serials_set)) * 100:.2f}%")
@@ -318,5 +318,14 @@ pd.set_option('display.max_columns', None)
 
 print("\n🔝 Top 10 Operations by Occurrence in Broken Heat Pumps (per Serial Number):")
 print(top_serial_stats.round(2))
+
+
+
+
+
+
+
+
+
 
 
