@@ -110,22 +110,27 @@ failed_tests = (
     .rename(columns={"dut_sn": "SerialNumber"})
 )
 
-# --- One-hot encode presence of each relevant test ID ---
-test_presence = (
-    tests_df[tests_df["id"].isin(relevant_test_ids)]
-    .groupby("dut_sn")["id"]
-    .unique()
-    .reset_index()
-    .rename(columns={"dut_sn": "SerialNumber"})
-)
+# --- Create status matrix for test IDs ---
+status_matrix = []
 
-test_ohe = test_presence["id"].apply(lambda ids: {tid: 1 for tid in ids})
-test_ohe_df = pd.json_normalize(test_ohe).fillna(0).astype(int)
-test_ohe_df["SerialNumber"] = test_presence["SerialNumber"]
+# Loop over serial numbers
+for serial, group in tests_df[tests_df["id"].isin(relevant_test_ids)].groupby("dut_sn"):
+    row = {"SerialNumber": serial}
+    for test_id in relevant_test_ids:
+        test_subset = group[group["id"] == test_id]
+        if len(test_subset) == 0:
+            row[test_id] = float("nan")  # Not tested
+        elif (test_subset["test_passed"] == 0).any():
+            row[test_id] = 1  # At least one failure
+        else:
+            row[test_id] = 0  # Only passed
+    status_matrix.append(row)
 
-# --- Merge test features ---
+test_status_df = pd.DataFrame(status_matrix)
+
+# --- Merge test features into main dataset ---
 df_augmented = df_augmented.merge(failed_tests, on="SerialNumber", how="left")
-df_augmented = df_augmented.merge(test_ohe_df, on="SerialNumber", how="left")
+df_augmented = df_augmented.merge(test_status_df, on="SerialNumber", how="left")
 
 # === Final Output ===
 # Save to CSV if needed
