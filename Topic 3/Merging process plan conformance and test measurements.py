@@ -237,3 +237,19 @@ df_augmented_golf.loc[missing_failed_tests, "NumberOfFailedTests"] = 0
 # --- Save final dataset ---
 df_augmented_golf.to_csv("heatpump_augmented_golf.csv", index=False)
 
+# Get the list of all columns
+all_cols = list(df_augmented_golf.columns)
+
+# Identify the index range for the columns to drop
+start_idx = all_cols.index("total_operations")
+end_idx = all_cols.index("Top Preparation")
+
+# Get the column names in that range
+cols_to_drop = all_cols[start_idx:end_idx + 1]
+
+# Drop them to create a new dataset
+df_golf_reduced = df_augmented_golf.drop(columns=cols_to_drop)
+
+# Save if needed
+df_golf_reduced.to_csv("heatpump_augmented_golf_test.csv", index=False)
+
