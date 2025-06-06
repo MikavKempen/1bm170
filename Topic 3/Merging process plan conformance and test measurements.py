@@ -73,31 +73,40 @@ df_augmented = df_augmented.merge(op_ohe_df, on="SerialNumber", how="left")
 
 # === PART 2: TEST MEASUREMENT FEATURES ===
 
+# Create a set of serials that have test measurements
+serials_with_tests = set(tests_df["dut_sn"])
+
+# Add binary column to indicate presence of test measurements
+df_augmented["has_test_measurements"] = df_augmented["SerialNumber"].apply(
+    lambda sn: 1 if sn in serials_with_tests else 0
+)
+
 # --- Define test IDs of interest from the image (manually extracted) ---
 relevant_test_ids = [
-    "weight of R290 in heat pump",
+    "CoolingCompressorPressureOutInDelta",
     "GroundContinuityPowerPanel",
-    "Weight of R290 in heat pump",
-    "CoolingWaterTempOutAbsoluteCalori",
-    "CoolingWaterTemperatureInOutDelta",
+    "HeatingWaterTempOutInDeltaTestSystemCalori",
+    "CoolingAirTempInOutDelta",
+    "VoltageWithstandAc",
     "GroundContinuityFanCover",
-    "HeatingWaterTempInAbsoluteCalori",
-    "HeatingCompressorSpeedAbsolute",
-    "CompressorTempInAbsolute",
+    "AirTempInOutDelta",
+    "GroundContinuityFanTopCover",
     "GroundContinuityFan",
-    "Total defrost time",
-    "Time for state change from 7 > 0",
-    "Time for state change from 0 > 7",
-    "HeatingTransientTempIn",
-    "PropaneCylinderWeight",
-    "CompressorTempOutAbsolute",
-    "StartCompressorPressureOut",
     "GroundContinuityEvaporator",
-    "VacuumingTime",
-    "StartAirTempOut",
-    "StartWaterTempOut",
-    "StartAirTempIn",
-    "StartWaterTempIn"
+    "HeatingAmbientHumidity",
+    "HeatingTransientTempIn",
+    "CompressorTempInAbsolute",
+    "Vacuum not reached to soon",
+    "HeatingAmbientTemperature",
+    "CoolingWaterTempOutInDelta",
+    "InitAmbientTemperature",
+    "DeInitAmbientTemperature",
+    "TestSystemPowerConsumed",
+    "TestSystemPowerCreated",
+    "StartWaterTempInTestSystem",
+    "StartWaterTempOutTestSystem",
+    "DuctCOP",
+    "CompressorPressureInAbsolute"
 ]
 
 # --- Compute number of failed tests ---
@@ -114,10 +123,10 @@ failed_tests = (
 status_matrix = []
 
 # Loop over serial numbers
-for serial, group in tests_df[tests_df["id"].isin(relevant_test_ids)].groupby("dut_sn"):
+for serial, group in tests_df[tests_df["operation_id"].isin(relevant_test_ids)].groupby("dut_sn"):
     row = {"SerialNumber": serial}
     for test_id in relevant_test_ids:
-        test_subset = group[group["id"] == test_id]
+        test_subset = group[group["operation_id"] == test_id]
         if len(test_subset) == 0:
             row[test_id] = float("nan")  # Not tested
         elif (test_subset["test_passed"] == 0).any():
@@ -132,6 +141,88 @@ test_status_df = pd.DataFrame(status_matrix)
 df_augmented = df_augmented.merge(failed_tests, on="SerialNumber", how="left")
 df_augmented = df_augmented.merge(test_status_df, on="SerialNumber", how="left")
 
+# Ensure consistent serial number format
+df_augmented["SerialNumber"] = df_augmented["SerialNumber"].astype(str).str.strip()
+mes_ops["SerialNumber"] = mes_ops["SerialNumber"].astype(str).str.strip()
+tests_df["dut_sn"] = tests_df["dut_sn"].astype(str).str.strip()
+
+# --- Get all serial sets ---
+all_serials = set(df_augmented["SerialNumber"])
+mes_serials = set(mes_ops["SerialNumber"])
+test_serials = set(tests_df["dut_sn"])
+
+# --- Intersections ---
+in_both_mes_and_test = all_serials & mes_serials & test_serials
+
+print(f"All heatpumps: {len(all_serials)} total")
+print(f"In MES only: {len(all_serials & mes_serials)}")
+print(f"In Tests only: {len(all_serials & test_serials)}")
+print(f"In both MES & Tests: {len(in_both_mes_and_test)}")
+print(f"Coverage (All): {(len(in_both_mes_and_test) / len(all_serials)) * 100:.2f}%")
+
+# --- Broken heatpumps only ---
+broken_serials = set(df_augmented[df_augmented["State"] == 5]["SerialNumber"])
+broken_in_both = broken_serials & mes_serials & test_serials
+
+print(f"\nBroken heatpumps: {len(broken_serials)} total")
+print(f"In both MES & Tests: {len(broken_in_both)}")
+print(f"Coverage (Broken): {(len(broken_in_both) / len(broken_serials)) * 100:.2f}%")
+
+# Ensure consistency
+mes_ops["SerialNumber"] = mes_ops["SerialNumber"].astype(str).str.strip()
+
+# Convert the relevant columns to numeric
+mes_ops["OpPlannedTotalQuantity"] = pd.to_numeric(mes_ops["OpPlannedTotalQuantity"], errors="coerce")
+mes_ops["OpTotalConfirmedYieldQty"] = pd.to_numeric(mes_ops["OpTotalConfirmedYieldQty"], errors="coerce")
+mes_ops["OpTotalConfirmedScrapQty"] = pd.to_numeric(mes_ops["OpTotalConfirmedScrapQty"], errors="coerce")
+
+# Aggregate (sum) these per SerialNumber
+quantity_aggregates = (
+    mes_ops
+    .groupby("SerialNumber")[
+        ["OpPlannedTotalQuantity", "OpTotalConfirmedYieldQty", "OpTotalConfirmedScrapQty"]
+    ]
+    .sum()
+    .reset_index()
+)
+
+# Merge into your final dataset
+df_augmented = df_augmented.merge(quantity_aggregates, on="SerialNumber", how="left")
+
 # === Final Output ===
 # Save to CSV if needed
 df_augmented.to_csv("heatpump_data_augmented.csv", index=False)
+
+df_augmented_golf = df_augmented.copy()
+
+# --- Step 2: Fill missing commissioning info ---
+df_augmented_golf["CommissionedAt"] = df_augmented_golf["CommissionedAt"].fillna("Unknown")
+df_augmented_golf["CommissionedMonth"] = df_augmented_golf["CommissionedMonth"].fillna("Unknown")
+
+# --- Step 3: Identify and drop rows missing MES AND test data ---
+
+# --- Step 3: Drop rows where both MES and Test data are missing ---
+df_augmented_golf = df_augmented_golf[
+    ~((df_augmented_golf["has_mes_data"] == 0) & (df_augmented_golf["has_test_measurements"] == 0))
+].copy()
+
+# Define MES and Test columns if not defined earlier
+mes_columns = [
+    "MissingOperations",
+    "TotalRepeatedExecutions",
+    "DistinctOperationsRepeated"
+] + list(op_ohe_df.columns.drop("SerialNumber", errors="ignore"))
+
+test_columns = [
+    "has_mes_data",
+    "has_test_measurements"
+] + relevant_test_ids
+
+# --- Step 4: Fill 'Unknown' for MES columns if test data exists but MES is missing ---
+only_test_rows = df_augmented_golf[mes_columns].isna().all(axis=1) & ~df_augmented_golf[test_columns].isna().all(axis=1)
+
+# Fill MES columns in those rows with 'Unknown'
+df_augmented_golf.loc[only_test_rows, mes_columns] = df_augmented_golf.loc[only_test_rows, mes_columns].fillna("Unknown")
+
+# --- Save if needed ---
+df_augmented_golf.to_csv("heatpump_augmented_golf.csv", index=False)

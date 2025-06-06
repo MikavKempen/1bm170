@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Load the test measurements CSV from the local project folder
-df = pd.read_csv('test_measurements.csv', low_memory=False)
+df = pd.read_csv('Dataset3-test_measurements.csv', low_memory=False)
 
 # 1. Drop 'uncertainty' and 'method' columns
 print("1. Drop 'uncertainty' and 'method' columns \n")
@@ -190,10 +190,6 @@ df.loc[condition, ['lower_specification_limit', 'upper_specification_limit']] = 
 df['test_passed'] = ((df['value'] >= df['lower_specification_limit']) & (df['value'] <= df['upper_specification_limit'])).astype(int)
 print(df[['timestamp', 'value', 'test_passed']].head(), "\n")
 
-# 4. Drop 'timestamp'  columns
-print("4. Drop 'timestamp' columns \n")
-df = df.drop(columns=['timestamp'])
 
-df.to_csv('test_measurements_cleaned.csv', index=False)
-
+df.to_csv('test_measurements_cleaned.csv',index=False)
 

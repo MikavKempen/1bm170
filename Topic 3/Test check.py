@@ -16,13 +16,13 @@ broken_serials = broken_heatpumps['SerialNumber'].unique()
 tests_broken = tests_df[tests_df['dut_sn'].isin(broken_serials)]
 
 # Group and calculate failed/total tests for broken heatpumps
-failed_tests_broken = tests_broken[tests_broken['test_passed'] == 0].groupby('id').size().rename('failed_tests_broken')
-total_tests_broken = tests_broken.groupby('id').size().rename('total_tests_broken')
+failed_tests_broken = tests_broken[tests_broken['test_passed'] == 0].groupby('operation_id').size().rename('failed_tests_broken')
+total_tests_broken = tests_broken.groupby('operation_id').size().rename('total_tests_broken')
 percentage_failed_broken = (failed_tests_broken / total_tests_broken * 100).rename('percentage_failed_broken')
 
 # Group and calculate failed/total tests for all heatpumps
-failed_tests_all = tests_df[tests_df['test_passed'] == 0].groupby('id').size().rename('failed_tests_all')
-total_tests_all = tests_df.groupby('id').size().rename('total_tests_all')
+failed_tests_all = tests_df[tests_df['test_passed'] == 0].groupby('operation_id').size().rename('failed_tests_all')
+total_tests_all = tests_df.groupby('operation_id').size().rename('total_tests_all')
 percentage_failed_all = (failed_tests_all / total_tests_all * 100).rename('percentage_failed_all')
 
 # Combine into one table
