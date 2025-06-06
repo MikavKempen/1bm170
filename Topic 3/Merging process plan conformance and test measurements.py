@@ -189,6 +189,8 @@ quantity_aggregates = (
 # Merge into your final dataset
 df_augmented = df_augmented.merge(quantity_aggregates, on="SerialNumber", how="left")
 
+df_augmented = df_augmented.drop(columns=['State','total_duration'])
+
 # === Final Output ===
 # Save to CSV if needed
 df_augmented.to_csv("heatpump_data_augmented.csv", index=False)
