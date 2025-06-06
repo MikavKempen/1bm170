@@ -199,30 +199,39 @@ df_augmented_golf = df_augmented.copy()
 df_augmented_golf["CommissionedAt"] = df_augmented_golf["CommissionedAt"].fillna("Unknown")
 df_augmented_golf["CommissionedMonth"] = df_augmented_golf["CommissionedMonth"].fillna("Unknown")
 
-# --- Step 3: Identify and drop rows missing MES AND test data ---
-
 # --- Step 3: Drop rows where both MES and Test data are missing ---
 df_augmented_golf = df_augmented_golf[
     ~((df_augmented_golf["has_mes_data"] == 0) & (df_augmented_golf["has_test_measurements"] == 0))
 ].copy()
 
-# Define MES and Test columns if not defined earlier
-mes_columns = [
-    "MissingOperations",
-    "TotalRepeatedExecutions",
-    "DistinctOperationsRepeated"
-] + list(op_ohe_df.columns.drop("SerialNumber", errors="ignore"))
+# === Step 4: Fill missing MES and Test fields ===
 
-test_columns = [
-    "has_mes_data",
-    "has_test_measurements"
-] + relevant_test_ids
+# 1. --- Define MES columns ---
+start_col = 'total_operations'
+end_col = 'Top Preparation'
+cols = list(df_augmented_golf.columns)
 
-# --- Step 4: Fill 'Unknown' for MES columns if test data exists but MES is missing ---
-only_test_rows = df_augmented_golf[mes_columns].isna().all(axis=1) & ~df_augmented_golf[test_columns].isna().all(axis=1)
+start_idx = cols.index(start_col)
+end_idx = cols.index(end_col)
 
-# Fill MES columns in those rows with 'Unknown'
-df_augmented_golf.loc[only_test_rows, mes_columns] = df_augmented_golf.loc[only_test_rows, mes_columns].fillna("Unknown")
+mes_columns = cols[start_idx:end_idx + 1] + [
+    "OpPlannedTotalQuantity",
+    "OpTotalConfirmedYieldQty",
+    "OpTotalConfirmedScrapQty"
+]
 
-# --- Save if needed ---
+# Fill missing MES data with 'Unknown'
+df_augmented_golf[mes_columns] = df_augmented_golf[mes_columns].fillna("Unknown")
+
+# 2. --- Fill relevant test columns with 'Not tested' if missing and should be present ---
+for col in relevant_test_ids:
+    condition = (df_augmented_golf["has_test_measurements"] == 1) & (df_augmented_golf[col].isna())
+    df_augmented_golf.loc[condition, col] = 2
+
+# 3. --- Fill missing NumberOfFailedTests with 0 if has_test_measurements == 1 ---
+missing_failed_tests = (df_augmented_golf["has_test_measurements"] == 1) & (df_augmented_golf["NumberOfFailedTests"].isna())
+df_augmented_golf.loc[missing_failed_tests, "NumberOfFailedTests"] = 0
+
+# --- Save final dataset ---
 df_augmented_golf.to_csv("heatpump_augmented_golf.csv", index=False)
+
