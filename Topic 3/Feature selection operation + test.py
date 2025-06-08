@@ -105,18 +105,25 @@ def plot_feature_importance(model, feature_names, title):
 
 def compute_metrics(cm):
     TN, FP, FN, TP = cm.ravel()
-    acc = (TP + TN) / (TP + TN + FP + FN)
+    total = TP + TN + FP + FN
+
+    acc = (TP + TN) / total
     prec = TP / (TP + FP) if (TP + FP) > 0 else 0
     rec = TP / (TP + FN) if (TP + FN) > 0 else 0
     f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0
+
     prec0 = TN / (TN + FN) if (TN + FN) > 0 else 0
     rec0 = TN / (TN + FP) if (TN + FP) > 0 else 0
     f1_0 = 2 * prec0 * rec0 / (prec0 + rec0) if (prec0 + rec0) > 0 else 0
     macro_f1 = (f1 + f1_0) / 2
-    return acc, prec, rec, f1, macro_f1
+
+    fn_rate = FN / total
+    pos_rate = (TP + FP) / total
+
+    return acc, prec, rec, f1, macro_f1, fn_rate, pos_rate
 
 # Define class ratios to test
-ratios = [(0.5, 0.5), (0.6, 0.4), (0.7, 0.3), (0.8, 0.2), (0.9, 0.1)]
+ratios = [(0.55, 0.45), (0.56, 0.44), (0.57, 0.43), (0.58, 0.42), (0.59, 0.41), (0.6, 0.4), (0.61, 0.39), (0.62, 0.38), (0.63, 0.37), (0.64, 0.36), (0.65, 0.35), (0.66, 0.34), (0.67, 0.33), (0.68, 0.32), (0.69, 0.31)]
 
 # 5-fold stratified CV
 skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
@@ -164,8 +171,8 @@ for maj_ratio, min_ratio in ratios:
     sm_avg = np.mean(smote_metrics, axis=0)
     us_avg = np.mean(undersample_metrics, axis=0)
     print(f"\n>>> Averages for ratio {int(maj_ratio*100)}:{int(min_ratio*100)}")
-    print(f"SMOTE       - Acc: {sm_avg[0]:.3f}, Prec: {sm_avg[1]:.3f}, Rec: {sm_avg[2]:.3f}, F1: {sm_avg[3]:.3f}, Macro F1: {sm_avg[4]:.3f}")
-    print(f"Undersample - Acc: {us_avg[0]:.3f}, Prec: {us_avg[1]:.3f}, Rec: {us_avg[2]:.3f}, F1: {us_avg[3]:.3f}, Macro F1: {us_avg[4]:.3f}")
+    print(f"SMOTE       - Acc: {sm_avg[0]:.3f}, Prec: {sm_avg[1]:.3f}, Rec: {sm_avg[2]:.3f}, F1: {sm_avg[3]:.3f}, Macro F1: {sm_avg[4]:.3f}, FN Rate: {sm_avg[5]:.3f}, Pos Rate: {sm_avg[6]:.3f}")
+    print(f"Undersample - Acc: {us_avg[0]:.3f}, Prec: {us_avg[1]:.3f}, Rec: {us_avg[2]:.3f}, F1: {us_avg[3]:.3f}, Macro F1: {us_avg[4]:.3f}, FN Rate: {us_avg[5]:.3f}, Pos Rate: {us_avg[6]:.3f}")
 
 from sklearn.utils.class_weight import compute_class_weight
 

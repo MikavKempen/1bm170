@@ -135,20 +135,27 @@ for train_idx, test_idx in skf.split(X, y):
     # Extract metrics
     def compute_metrics(cm):
         TN, FP, FN, TP = cm.ravel()
-        accuracy = (TP + TN) / (TP + TN + FP + FN)
-        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-        precision0 = TN / (TN + FN) if (TN + FN) > 0 else 0.0
-        recall0 = TN / (TN + FP) if (TN + FP) > 0 else 0.0
-        f1_0 = 2 * precision0 * recall0 / (precision0 + recall0) if (precision0 + recall0) > 0 else 0.0
+        total = TP + TN + FP + FN
+
+        acc = (TP + TN) / total
+        prec = TP / (TP + FP) if (TP + FP) > 0 else 0
+        rec = TP / (TP + FN) if (TP + FN) > 0 else 0
+        f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0
+
+        prec0 = TN / (TN + FN) if (TN + FN) > 0 else 0
+        rec0 = TN / (TN + FP) if (TN + FP) > 0 else 0
+        f1_0 = 2 * prec0 * rec0 / (prec0 + rec0) if (prec0 + rec0) > 0 else 0
         macro_f1 = (f1 + f1_0) / 2
-        return accuracy, precision, recall, f1, macro_f1
+
+        fn_rate = FN / total
+        pos_rate = (TP + FP) / total
+
+        return acc, prec, rec, f1, macro_f1, fn_rate, pos_rate
 
     # Store and print evaluation metrics
     for name, cm, store in zip(["SMOTE", "Undersample", "Original", "Weighted"], [cm_sm, cm_us, cm_orig, cm_weighted], [metrics_smote, metrics_under, metrics_orig, metrics_weighted]):
-        acc, prec, rec, f1s, macro = compute_metrics(cm)
-        store.append([acc, prec, rec, f1s, macro])
+        acc, prec, rec, f1s, macro, fn_rate, pos_rate = compute_metrics(cm)
+        store.append([acc, prec, rec, f1s, macro, fn_rate, pos_rate])
         print(f"{name} model - Accuracy: {acc:.3f}, Precision: {prec:.3f}, Recall: {rec:.3f}, F1: {f1s:.3f}, Macro F1: {macro:.3f}")
 
     fold += 1
@@ -157,7 +164,7 @@ for train_idx, test_idx in skf.split(X, y):
 for name, results in zip(["SMOTE", "Undersample", "Original", "Weighted"], [metrics_smote, metrics_under, metrics_orig, metrics_weighted]):
     avg_metrics = np.mean(results, axis=0)
     print(f"\n{name} model average over 5 folds:")
-    print(f"Accuracy: {avg_metrics[0]:.3f}, Precision: {avg_metrics[1]:.3f}, Recall: {avg_metrics[2]:.3f}, F1: {avg_metrics[3]:.3f}, Macro F1: {avg_metrics[4]:.3f}")
+    print(f"Accuracy: {avg_metrics[0]:.3f}, Precision: {avg_metrics[1]:.3f}, Recall: {avg_metrics[2]:.3f}, F1: {avg_metrics[3]:.3f}, Macro F1: {avg_metrics[4]:.3f}, FN Rate: {avg_metrics[5]:.4f}, Pos Rate: {avg_metrics[6]:.4f}")
 
 # SHAP analysis for class-weighted model
 final_model = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42)

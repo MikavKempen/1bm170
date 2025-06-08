@@ -1,8 +1,11 @@
 import pandas as pd
 import numpy as np
 
+import xgboost
+print("XGBoost version:", xgboost.__version__)
+
 # Load data
-df = pd.read_csv("heatpump_augmented_golf_test.csv")
+df = pd.read_csv("heatpump_augmented_golf.csv")
 
 # Drop CommissionedAt and CommissionedMonth if they contain any unknown values
 for col in ['CommissionedAt', 'CommissionedMonth']:
@@ -26,7 +29,8 @@ if 'SerialNumber' in df.columns:
 # Identify categorical columns that need encoding
 categorical_cols = []
 # Known categorical fields (by domain knowledge or inspection):
-potential_cats = ['BoilerType', 'DhwType', 'Model']
+potential_cats = ['BoilerType', 'DhwType', 'Model',
+                  'first_operation_type', 'last_operation_type', 'dominant_operation_type']
 for col in potential_cats:
     if col in df.columns:
         categorical_cols.append(col)
@@ -78,28 +82,20 @@ def plot_feature_importance(model, feature_names, title):
     plt.tight_layout()
     plt.show()
 
-
 def compute_metrics(cm):
     TN, FP, FN, TP = cm.ravel()
-    total = TP + TN + FP + FN
-
-    acc = (TP + TN) / total
+    acc = (TP + TN) / (TP + TN + FP + FN)
     prec = TP / (TP + FP) if (TP + FP) > 0 else 0
     rec = TP / (TP + FN) if (TP + FN) > 0 else 0
     f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0
-
     prec0 = TN / (TN + FN) if (TN + FN) > 0 else 0
     rec0 = TN / (TN + FP) if (TN + FP) > 0 else 0
     f1_0 = 2 * prec0 * rec0 / (prec0 + rec0) if (prec0 + rec0) > 0 else 0
     macro_f1 = (f1 + f1_0) / 2
-
-    fn_rate = FN / total
-    pos_rate = (TP + FP) / total
-
-    return acc, prec, rec, f1, macro_f1, fn_rate, pos_rate
+    return acc, prec, rec, f1, macro_f1
 
 # Define class ratios to test
-ratios = [(0.5, 0.5), (0.6, 0.4), (0.7, 0.3), (0.8, 0.2), (0.9, 0.1)]
+ratios = [(0.725, 0.275), (0.75, 0.25), (0.775, 0.225), (0.8, 0.2), (0.825, 0.175), (0.85, 0.15), (0.875, 0.125), (0.9, 0.1)]
 
 # 5-fold stratified CV
 skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
@@ -147,82 +143,6 @@ for maj_ratio, min_ratio in ratios:
     sm_avg = np.mean(smote_metrics, axis=0)
     us_avg = np.mean(undersample_metrics, axis=0)
     print(f"\n>>> Averages for ratio {int(maj_ratio*100)}:{int(min_ratio*100)}")
-    print(f"SMOTE       - Acc: {sm_avg[0]:.3f}, Prec: {sm_avg[1]:.3f}, Rec: {sm_avg[2]:.3f}, F1: {sm_avg[3]:.3f}, Macro F1: {sm_avg[4]:.3f}, FN Rate: {sm_avg[5]:.4f}, Pos Rate: {sm_avg[6]:.4f}")
-    print(f"Undersample - Acc: {us_avg[0]:.3f}, Prec: {us_avg[1]:.3f}, Rec: {us_avg[2]:.3f}, F1: {us_avg[3]:.3f}, Macro F1: {us_avg[4]:.3f}, FN Rate: {us_avg[5]:.4f}, Pos Rate: {us_avg[6]:.4f}")
+    print(f"SMOTE       - Acc: {sm_avg[0]:.3f}, Prec: {sm_avg[1]:.3f}, Rec: {sm_avg[2]:.3f}, F1: {sm_avg[3]:.3f}, Macro F1: {sm_avg[4]:.3f}")
+    print(f"Undersample - Acc: {us_avg[0]:.3f}, Prec: {us_avg[1]:.3f}, Rec: {us_avg[2]:.3f}, F1: {us_avg[3]:.3f}, Macro F1: {us_avg[4]:.3f}")
 
-from sklearn.utils.class_weight import compute_class_weight
-
-# 80:20 undersampling + class weights
-maj_ratio, min_ratio = 0.8, 0.2
-print(f"\n=== 80:20 Undersample + Class Weights ===")
-
-undersample_weighted_metrics = []
-
-for fold, (train_idx, test_idx) in enumerate(skf.split(X, y), 1):
-    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-
-    min_count = sum(y_train == 1)
-    target_maj = int(min_count * (maj_ratio / min_ratio))
-    rus = RandomUnderSampler(sampling_strategy={0: target_maj, 1: min_count}, random_state=42)
-    X_train_us, y_train_us = rus.fit_resample(X_train, y_train)
-
-    # Compute class weights for the undersampled training set
-    class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train_us), y=y_train_us)
-    class_weight_dict = {cls: weight for cls, weight in zip(np.unique(y_train_us), class_weights)}
-
-    model_us_weighted = RandomForestClassifier(n_estimators=100, class_weight=class_weight_dict, random_state=42)
-    model_us_weighted.fit(X_train_us, y_train_us)
-    y_pred_us_weighted = model_us_weighted.predict(X_test)
-    cm_us_weighted = confusion_matrix(y_test, y_pred_us_weighted)
-    undersample_weighted_metrics.append(compute_metrics(cm_us_weighted))
-    plot_confusion_matrix_with_percentages(cm_us_weighted, f"Undersample + Weights - Fold {fold} - Ratio 80:20")
-    plot_feature_importance(model_us_weighted, X.columns, f"Undersample + Weights - Features - Fold {fold}")
-
-# Print average metrics
-us_weighted_avg = np.mean(undersample_weighted_metrics, axis=0)
-print(f"\n>>> Averages for Undersample + Weights at ratio 80:20")
-print(f"Undersample + Weights - Acc: {us_weighted_avg[0]:.3f}, Prec: {us_weighted_avg[1]:.3f}, Rec: {us_weighted_avg[2]:.3f}, F1: {us_weighted_avg[3]:.3f}, Macro F1: {us_weighted_avg[4]:.3f}")
-
-from xgboost import XGBClassifier
-
-print(f"\n=== 80:20 Undersample + XGBoost (scale_pos_weight) ===")
-
-xgb_undersample_metrics = []
-
-for fold, (train_idx, test_idx) in enumerate(skf.split(X, y), 1):
-    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-
-    min_count = sum(y_train == 1)
-    target_maj = int(min_count * (maj_ratio / min_ratio))
-    rus = RandomUnderSampler(sampling_strategy={0: target_maj, 1: min_count}, random_state=42)
-    X_train_us, y_train_us = rus.fit_resample(X_train, y_train)
-
-    # Compute scale_pos_weight = (# negative / # positive) in the training set
-    neg_count = sum(y_train_us == 0)
-    pos_count = sum(y_train_us == 1)
-    scale_pos_weight = neg_count / pos_count
-
-    model_xgb = XGBClassifier(
-        n_estimators=100,
-        max_depth=5,
-        learning_rate=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        scale_pos_weight=scale_pos_weight,
-        use_label_encoder=False,
-        eval_metric='logloss',
-        random_state=42
-    )
-    model_xgb.fit(X_train_us, y_train_us)
-    y_pred_xgb = model_xgb.predict(X_test)
-    cm_xgb = confusion_matrix(y_test, y_pred_xgb)
-    xgb_undersample_metrics.append(compute_metrics(cm_xgb))
-    plot_confusion_matrix_with_percentages(cm_xgb, f"XGBoost - Fold {fold} - Ratio 80:20")
-    plot_feature_importance(model_xgb, X.columns, f"XGBoost Features - Fold {fold}")
-
-# Print average metrics
-xgb_avg = np.mean(xgb_undersample_metrics, axis=0)
-print(f"\n>>> Averages for XGBoost at ratio 80:20")
-print(f"XGBoost       - Acc: {xgb_avg[0]:.3f}, Prec: {xgb_avg[1]:.3f}, Rec: {xgb_avg[2]:.3f}, F1: {xgb_avg[3]:.3f}, Macro F1: {xgb_avg[4]:.3f}")
