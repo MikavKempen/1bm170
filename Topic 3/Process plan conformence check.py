@@ -10,8 +10,8 @@ category_color_map = {
 ordered_columns = list(category_color_map.keys())
 
 # Load the datasets
-heatpumps = pd.read_csv('heatpumps_cleaned.csv')
-operations = pd.read_csv('Dataset2-mes_operations.csv')
+heatpumps = pd.read_csv('heatpumps_cleaned_v2.csv')
+operations = pd.read_csv('mes_operations_tagged.csv')
 process_plans = pd.read_csv('process_plans_cleaned.csv')
 
 # -------------------- Broken Heat Pumps Section --------------------
