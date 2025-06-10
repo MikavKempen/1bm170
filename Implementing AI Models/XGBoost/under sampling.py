@@ -1,92 +1,170 @@
 import pandas as pd
 import numpy as np
 from xgboost import XGBClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score,
-    classification_report, confusion_matrix, roc_curve, auc
-)
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import confusion_matrix
+from imblearn.under_sampling import RandomUnderSampler
 import matplotlib.pyplot as plt
-import seaborn as sns
+from collections import defaultdict
 
-# === Load dataset ===
-df = pd.read_csv("heatpump_augmented_mika.csv")
+# === Load and preprocess data ===
+df = pd.read_csv("heatpump_augmented_golf.csv")
+df.replace(['Unknown', 'unknown'], np.nan, inplace=True)
+df.drop(columns=[col for col in ['CommissionedAt', 'CommissionedMonth'] if col in df.columns], inplace=True, errors='ignore')
+df.dropna(inplace=True)
+df.drop(columns='SerialNumber', inplace=True, errors='ignore')
 
-# === Prepare features and target ===
-X = df.drop(columns=["Target_Broken", "State"], errors="ignore")
-y = df["Target_Broken"]
+potential_cats = ['BoilerType', 'DhwType', 'Model', 'first_operation_type', 'last_operation_type', 'dominant_operation_type']
+categorical_cols = [col for col in potential_cats if col in df.columns]
+df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=False)
+df_encoded[df_encoded.select_dtypes(include='object').columns] = df_encoded.select_dtypes(include='object').apply(pd.to_numeric)
 
-# Encode object columns
-for col in X.select_dtypes(include=['object']).columns:
-    X[col] = X[col].astype("category").cat.codes
+X = df_encoded.drop('Target_Broken', axis=1)
+y = df_encoded['Target_Broken'].astype(int)
 
-X = X.fillna(-999)
+# === Metric computation ===
+def compute_full_metrics(cm):
+    TN, FP, FN, TP = cm.ravel()
+    total = TP + TN + FP + FN
+    acc = (TP + TN) / total
+    prec = TP / (TP + FP) if (TP + FP) > 0 else 0
+    rec = TP / (TP + FN) if (TP + FN) > 0 else 0
+    f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0
+    prec0 = TN / (TN + FN) if (TN + FN) > 0 else 0
+    rec0 = TN / (TN + FP) if (TN + FP) > 0 else 0
+    f1_0 = 2 * prec0 * rec0 / (prec0 + rec0) if (prec0 + rec0) > 0 else 0
+    macro_f1 = (f1 + f1_0) / 2
+    fn_rate = FN / total
+    pos_rate = (TP + FP) / total
+    return acc, prec, rec, f1, macro_f1, fn_rate, pos_rate, np.array([[TN, FP], [FN, TP]])
 
-# === Split into train/test sets ===
-X_train_full, X_test, y_train_full, y_test = train_test_split(X, y, test_size=0.15, stratify=y, random_state=42)
+# === Undersampling experiments ===
+ratios = [(round(1 - p, 2), round(p, 2)) for p in np.arange(0.05, 0.96, 0.01)]
+n_runs = 20
 
-# === Custom resampling ===
-# 67% of class 0, 33% of class 1
-X_train_full["Target_Broken"] = y_train_full.values
-broken = X_train_full[X_train_full["Target_Broken"] == 1]
-not_broken = X_train_full[X_train_full["Target_Broken"] == 0]
+avg_fn_rates = []
+avg_pos_rates = []
+all_metrics = []
 
-# Sample class 0 (undersample to ~2x the class 1 size)
-not_broken_sampled = not_broken.sample(frac=0.66, random_state=42)
-# Sample class 1 (oversample to balance)
-broken_oversampled = broken.sample(n=len(not_broken_sampled)//2, replace=True, random_state=42)
+for maj_ratio, min_ratio in ratios:
+    fn_rate_runs, pos_rate_runs = [], []
+    confusion_sum = np.zeros((2, 2))
+    accs, precs, recs, f1s, macro_f1s = [], [], [], [], []
 
-# Combine and shuffle
-resampled = pd.concat([not_broken_sampled, broken_oversampled]).sample(frac=1, random_state=42)
-y_train = resampled["Target_Broken"]
-X_train = resampled.drop(columns=["Target_Broken"])
+    for run in range(n_runs):
+        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=run)
+        for train_idx, test_idx in skf.split(X, y):
+            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
-# === Train XGBoost model ===
-model = XGBClassifier(
-    n_estimators=100,
-    learning_rate=0.1,
-    max_depth=5,
-    use_label_encoder=False,
-    eval_metric="logloss",
-    random_state=42
-)
-model.fit(X_train, y_train)
+            min_count = sum(y_train == 1)
+            target_maj = int(min_count * (maj_ratio / min_ratio))
+            rus = RandomUnderSampler(sampling_strategy={0: target_maj, 1: min_count}, random_state=run)
+            X_train_us, y_train_us = rus.fit_resample(X_train, y_train)
 
-# === Predictions and probabilities ===
-y_pred = model.predict(X_test)
-y_prob = model.predict_proba(X_test)[:, 1]
+            model = XGBClassifier(
+                n_estimators=100,
+                learning_rate=0.1,
+                max_depth=5,
+                use_label_encoder=False,
+                eval_metric="logloss",
+                verbosity=0,
+                random_state=run
+            )
+            model.fit(X_train_us, y_train_us)
+            y_pred = model.predict(X_test)
 
-# === Metrics ===
-print("Accuracy:", accuracy_score(y_test, y_pred))
-print("Precision:", precision_score(y_test, y_pred, zero_division=0))
-print("Recall:", recall_score(y_test, y_pred, zero_division=0))
-print("F1 Score:", f1_score(y_test, y_pred, zero_division=0))
-print("\nClassification Report:\n", classification_report(y_test, y_pred, zero_division=0))
+            cm = confusion_matrix(y_test, y_pred)
+            acc, prec, rec, f1, macro_f1, fn_rate, pos_rate, cm_vals = compute_full_metrics(cm)
+            confusion_sum += cm_vals
+            fn_rate_runs.append(fn_rate)
+            pos_rate_runs.append(pos_rate)
+            accs.append(acc)
+            precs.append(prec)
+            recs.append(rec)
+            f1s.append(f1)
+            macro_f1s.append(macro_f1)
 
-# === Confusion matrix ===
-cm = confusion_matrix(y_test, y_pred)
-labels = np.array([['True Negative', 'False Positive'], ['False Negative', 'True Positive']])
-counts = cm.astype(str)
-annot = np.char.add(labels, '\n' + counts)
+    avg_fn_rates.append(np.mean(fn_rate_runs))
+    avg_pos_rates.append(np.mean(pos_rate_runs))
+    all_metrics.append({
+        "acc": np.mean(accs),
+        "prec": np.mean(precs),
+        "rec": np.mean(recs),
+        "f1": np.mean(f1s),
+        "macro_f1": np.mean(macro_f1s),
+        "conf_matrix": (confusion_sum / (n_runs * 5)).round(2)
+    })
 
-plt.figure(figsize=(6, 5))
-sns.heatmap(cm, annot=annot, fmt='', cmap='Blues', xticklabels=['Pred 0', 'Pred 1'], yticklabels=['Actual 0', 'Actual 1'])
-plt.title("Confusion Matrix")
-plt.xlabel("Predicted")
-plt.ylabel("Actual")
+# === Plot FN vs Pos Rate ===
+plt.figure(figsize=(10, 6))
+plt.plot(avg_pos_rates, avg_fn_rates, marker='o', label="XGBoost Undersample")
+plt.axhline(y=0.01, color='red', linestyle='--', label='FN Rate = 0.01')
+plt.xlabel("Positive Rate")
+plt.ylabel("False Negative Rate")
+plt.title("XGBoost: FN Rate vs Positive Rate across Ratios")
+plt.legend()
+plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-# === ROC curve ===
-fpr, tpr, thresholds = roc_curve(y_test, y_prob)
-roc_auc = auc(fpr, tpr)
+# === Identify best ratios ===
+results_df = pd.DataFrame({
+    "Majority Ratio": [r[0] for r in ratios],
+    "Minority Ratio": [r[1] for r in ratios],
+    "Avg FN Rate": avg_fn_rates,
+    "Avg Positive Rate": avg_pos_rates
+})
+filtered_df = results_df[results_df["Avg FN Rate"] <= 0.01].sort_values(by="Avg Positive Rate")
 
-plt.figure(figsize=(6, 5))
-plt.plot(fpr, tpr, label=f'XGBoost (AUC = {roc_auc:.2f})')
-plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
-plt.xlabel("False Positive Rate")
-plt.ylabel("True Positive Rate")
-plt.title("ROC Curve")
-plt.legend()
+print("Best undersampling ratios with Avg FN Rate <= 0.01 and lowest Avg Positive Rate:")
+print(filtered_df.head(10))
+
+# === Final confusion matrix and metrics ===
+best_idx = filtered_df.index[0]
+best_metrics = all_metrics[best_idx]
+conf_matrix = best_metrics["conf_matrix"]
+conf_matrix_percent = (conf_matrix / conf_matrix.sum(axis=1, keepdims=True) * 100).round(2)
+
+print("Average Confusion Matrix (Counts):")
+print(conf_matrix)
+print("Average Confusion Matrix (Percentages):")
+print(conf_matrix_percent)
+print("Average Metrics:")
+print(f"Accuracy: {best_metrics['acc']:.3f}, Precision: {best_metrics['prec']:.3f}, Recall: {best_metrics['rec']:.3f}, "
+      f"F1: {best_metrics['f1']:.3f}, Macro F1: {best_metrics['macro_f1']:.3f}")
+
+# === Feature importance plot for best ratio ===
+maj_ratio, min_ratio = ratios[best_idx]
+importance_accumulator = defaultdict(float)
+
+for run in range(n_runs):
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=run)
+    for train_idx, _ in skf.split(X, y):
+        X_train = X.iloc[train_idx]
+        y_train = y.iloc[train_idx]
+
+        min_count = sum(y_train == 1)
+        target_maj = int(min_count * (maj_ratio / min_ratio))
+        rus = RandomUnderSampler(sampling_strategy={0: target_maj, 1: min_count}, random_state=run)
+        X_train_us, y_train_us = rus.fit_resample(X_train, y_train)
+
+        model = XGBClassifier(n_estimators=100, max_depth=5, use_label_encoder=False, eval_metric="logloss", random_state=run)
+        model.fit(X_train_us, y_train_us)
+
+        for feat, importance in zip(X.columns, model.feature_importances_):
+            importance_accumulator[feat] += importance
+
+total_models = n_runs * 5
+avg_importances = {feat: val / total_models for feat, val in importance_accumulator.items()}
+
+import_df = pd.DataFrame.from_dict(avg_importances, orient='index', columns=['Importance'])
+import_df = import_df.sort_values(by='Importance', ascending=False).head(20)
+
+plt.figure(figsize=(10, 6))
+plt.barh(import_df.index[::-1], import_df['Importance'][::-1], color='orange', edgecolor='black')
+plt.xlabel("Importance")
+plt.ylabel("Feature")
+plt.title(f"XGBoost Feature Importances - Avg over {total_models} models - Ratio {int(maj_ratio*100)}:{int(min_ratio*100)}")
 plt.tight_layout()
 plt.show()

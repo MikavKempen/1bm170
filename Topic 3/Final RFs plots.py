@@ -11,7 +11,7 @@ row_sums = cm_counts.sum(axis=1, keepdims=True)
 cm_percent = cm_counts / row_sums * 100
 
 # Format combined labels
-labels = np.array([[f"{int(cm_counts[i, j])}\n{cm_percent[i, j]:.2f}%" for j in range(2)] for i in range(2)])
+labels = np.array([[f"{cm_counts[i, j]:.2f}\n{cm_percent[i, j]:.2f}%" for j in range(2)] for i in range(2)])
 
 # Plot
 plt.figure(figsize=(4, 4))
