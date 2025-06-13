@@ -7,7 +7,7 @@ from imblearn.under_sampling import RandomUnderSampler
 import matplotlib.pyplot as plt
 
 # === Load and preprocess data ===
-df = pd.read_csv("heatpump_augmented_golf.csv")
+df = pd.read_csv("heatpump_augmented_final.csv")
 df.replace(['Unknown', 'unknown'], np.nan, inplace=True)
 df.drop(columns=[col for col in ['CommissionedAt', 'CommissionedMonth'] if col in df.columns], inplace=True, errors='ignore')
 df.dropna(inplace=True)
@@ -39,7 +39,7 @@ def compute_full_metrics(cm):
 
 # === Phase 1: Run all ratios ===
 ratios = [(round(1 - p, 2), round(p, 2)) for p in np.arange(0.05, 0.96, 0.01)]
-n_runs = 20
+n_runs = 5
 
 avg_fn_rates = []
 avg_pos_rates = []
@@ -134,7 +134,7 @@ for run in range(n_runs):
         rus = RandomUnderSampler(sampling_strategy={0: target_maj, 1: min_count}, random_state=run)
         X_train_us, y_train_us = rus.fit_resample(X_train, y_train)
 
-        model = RandomForestClassifier(n_estimators=200, random_state=run)
+        model = RandomForestClassifier(n_estimators=100, random_state=run)
         model.fit(X_train_us, y_train_us)
         y_pred = model.predict(X_test)
 

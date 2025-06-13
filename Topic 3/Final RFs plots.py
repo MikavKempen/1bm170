@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Average confusion matrix (rounded from the provided data)
-cm_counts = np.array([[273.95, 72.45],
-                      [3.39, 2.41]])
+cm_counts = np.array([[274.52, 71.88],
+                      [3.38, 2.42]])
 
 # Compute percentages per true label row
 row_sums = cm_counts.sum(axis=1, keepdims=True)

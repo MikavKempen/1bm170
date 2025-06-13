@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 
 # === Load and preprocess data ===
-df = pd.read_csv("heatpump_augmented_golf.csv")
+df = pd.read_csv("heatpump_augmented_final.csv")
 df.replace(['Unknown', 'unknown'], np.nan, inplace=True)
 df.drop(columns=[col for col in ['CommissionedAt', 'CommissionedMonth'] if col in df.columns], inplace=True, errors='ignore')
 df.dropna(inplace=True)
