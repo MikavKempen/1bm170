@@ -10,33 +10,7 @@ tests_df = pd.read_csv("test_measurements_cleaned.csv")
 df_main["SerialNumber"] = df_main["SerialNumber"].astype(str).str.strip()
 mes_ops["SerialNumber"] = mes_ops["SerialNumber"].astype(str).str.strip()
 tests_df["dut_sn"] = tests_df["dut_sn"].astype(str).str.strip()
-# --- Load genealogy dataset ---
-genealogy_df = pd.read_csv("Dataset4-genealogy.csv")
 
-# --- Ensure consistency in SerialNumber format ---
-genealogy_df["child"] = genealogy_df["ChildSerialNumber"].astype(str).str.strip()
-genealogy_df["parent"] = genealogy_df["ParentSerialNumber"].astype(str).str.strip()
-
-# --- Count matching serials (child or parent match) ---
-serials_df_main = set(df_main["SerialNumber"])
-serials_mes = set(mes_ops["SerialNumber"])
-serials_tests = set(tests_df["dut_sn"])
-
-child_serials = set(genealogy_df["child"])
-parent_serials = set(genealogy_df["parent"])
-combined_genealogy_serials = child_serials | parent_serials
-
-# Matches per dataset
-match_df_main = serials_df_main & combined_genealogy_serials
-match_mes = serials_mes & combined_genealogy_serials
-match_tests = serials_tests & combined_genealogy_serials
-match_df_main_mes = (serials_df_main & serials_mes) & combined_genealogy_serials
-
-# Print matching statistics
-print(f"Matches with df_main (child or parent): {len(match_df_main)}")
-print(f"Matches with mes_ops (child or parent): {len(match_mes)}")
-print(f"Matches with tests_df (child or parent): {len(match_tests)}")
-print(f"Matches with both df_main and mes_ops (child or parent): {len(match_df_main_mes)}")
 # === PART 1: MES OPERATIONS FEATURES ===
 
 # --- Expected Operations Mapping ---
@@ -96,35 +70,6 @@ op_ohe_df["SerialNumber"] = op_presence["SerialNumber"]
 # === Merge MES features into main dataset ===
 df_augmented = df_main.merge(mes_features_agg, on="SerialNumber", how="left")
 df_augmented = df_augmented.merge(op_ohe_df, on="SerialNumber", how="left")
-
-# === PART 3: GENEALOGY FEATURES (No one-hot, fill missing with 0) ===
-
-# --- Compute number of children and parents ---
-num_children = (
-    genealogy_df.groupby("parent")["child"]
-    .count()
-    .rename("NumChildren")
-    .reset_index()
-    .rename(columns={"parent": "SerialNumber"})
-)
-
-num_parents = (
-    genealogy_df.groupby("child")["parent"]
-    .count()
-    .rename("NumParents")
-    .reset_index()
-    .rename(columns={"child": "SerialNumber"})
-)
-
-# --- Combine both features ---
-genealogy_features = pd.merge(num_children, num_parents, on="SerialNumber", how="outer")
-
-# --- Merge into augmented dataset ---
-df_augmented = df_augmented.merge(genealogy_features, on="SerialNumber", how="left")
-
-# --- Fill missing values with 0 ---
-df_augmented["NumChildren"] = df_augmented["NumChildren"].fillna(0).astype(int)
-df_augmented["NumParents"] = df_augmented["NumParents"].fillna(0).astype(int)
 
 # === PART 2: TEST MEASUREMENT FEATURES ===
 
@@ -195,42 +140,6 @@ test_status_df = pd.DataFrame(status_matrix)
 # --- Merge test features into main dataset ---
 df_augmented = df_augmented.merge(failed_tests, on="SerialNumber", how="left")
 df_augmented = df_augmented.merge(test_status_df, on="SerialNumber", how="left")
-
-# === PART 4: ADDITIONAL TEST FEATURES ===
-
-# --- NumberOfRepeatedTests ---
-repeated_counts = (
-    tests_df.groupby(["dut_sn", "operation_id"])
-    .size()
-    .reset_index(name="count")
-)
-repeated_tests = repeated_counts[repeated_counts["count"] > 1]
-num_repeated_tests = repeated_tests.groupby("dut_sn").size().reset_index(name="NumberOfRepeatedTests")
-num_repeated_tests = num_repeated_tests.rename(columns={"dut_sn": "SerialNumber"})
-
-# --- NumberOfMarginTests (passed tests within 5% of limits) ---
-tests_df["tolerance"] = tests_df["upper_specification_limit"] - tests_df["lower_specification_limit"]
-tests_df["lower_margin"] = tests_df["lower_specification_limit"] + 0.05 * tests_df["tolerance"]
-tests_df["upper_margin"] = tests_df["upper_specification_limit"] - 0.05 * tests_df["tolerance"]
-
-tests_df["within_5_percent"] = (
-    ((tests_df["value"] >= tests_df["lower_specification_limit"]) & (tests_df["value"] <= tests_df["lower_margin"])) |
-    ((tests_df["value"] <= tests_df["upper_specification_limit"]) & (tests_df["value"] >= tests_df["upper_margin"]))
-) & (tests_df["test_passed"] == 1)
-
-margin_test_counts = (
-    tests_df.groupby("dut_sn")["within_5_percent"]
-    .sum()
-    .reset_index(name="NumberOfMarginTests")
-    .rename(columns={"dut_sn": "SerialNumber"})
-)
-
-# --- Merge into main dataset and fill missing values with 0 ---
-df_augmented = df_augmented.merge(num_repeated_tests, on="SerialNumber", how="left")
-df_augmented["NumberOfRepeatedTests"] = df_augmented["NumberOfRepeatedTests"].fillna(0).astype(int)
-
-df_augmented = df_augmented.merge(margin_test_counts, on="SerialNumber", how="left")
-df_augmented["NumberOfMarginTests"] = df_augmented["NumberOfMarginTests"].fillna(0).astype(int)
 
 # Ensure consistent serial number format
 df_augmented["SerialNumber"] = df_augmented["SerialNumber"].astype(str).str.strip()
@@ -326,7 +235,7 @@ missing_failed_tests = (df_augmented_golf["has_test_measurements"] == 1) & (df_a
 df_augmented_golf.loc[missing_failed_tests, "NumberOfFailedTests"] = 0
 
 # --- Save final dataset ---
-df_augmented_golf.to_csv("heatpump_augmented_final.csv", index=False)
+df_augmented_golf.to_csv("heatpump_augmented_golf.csv", index=False)
 
 # Get the list of all columns
 all_cols = list(df_augmented_golf.columns)
