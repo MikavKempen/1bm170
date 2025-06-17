@@ -1,0 +1,15 @@
+MfgOrderOperationText,0.0,1.0,2.0,3.0
+Assembly,9,4,7,6
+Assembly Merge,1,3,5,11
+Bottom Assembly,37,103,24,12
+Bottom Preparation,6,118,6,3
+Brazing,3,19,14,15
+FI,45,55,4,0
+FT,537,0,0,0
+Final Assembly,86,91,3,0
+Grounding safety test,1,14,25,13
+MAI,52,3,0,0
+PROP,67,11,3,3
+Packing,440,593,70,0
+ST,373,6,5,1
+ST02,34,0,0,0
